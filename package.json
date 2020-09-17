@@ -21,11 +21,32 @@
   ],
   "activationEvents": [
     "onCommand:extension.quickOpen",
-    "onCommand:extension.quickOpenPath"
+    "onCommand:extension.quickOpenPath",
+    "onCommand:extension.quickOpenSearch"
   ],
   "main": "./out/src/extension",
   "icon": "images/icon.png",
   "contributes": {
+    "configuration": {
+      "title": "QuickOpen",
+      "properties": {
+        "quickOpen.maxSearchResult": {
+          "type": "number",
+          "default": 10,
+          "scope": "window",
+          "markdownDescription": "Specifies the number of items to show in serach list. Use 0 to specify no limit"
+        },
+        "quickOpen.searchIgnoreParterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"],
+          "scope": "window",
+          "markdownDescription": "Specifies match parterns to ignore when searching in the workspace."
+        }
+      }
+    },
     "commands": [
       {
         "command": "extension.quickOpen",
@@ -34,6 +55,14 @@
       {
         "command": "extension.quickOpenPath",
         "title": "Quick Open Input Path"
+      },
+      {
+        "command": "extension.quickOpenSearch",
+        "title": "Quick Search And Open File"
+      },
+      {
+        "command": "extension.quickOpenSearchCacheReset",
+        "title": "Reset Quick Search File Cache"
       }
     ],
     "keybindings": [
@@ -44,6 +73,14 @@
       {
         "command": "extension.quickOpenPath",
         "key": "ctrl+cmd+p"
+      },
+      {
+        "command": "extension.quickOpenSearch",
+        "key": "ctrl+cmd+s"
+      },
+      {
+        "command": "extension.quickOpenSearchCacheReset",
+        "key": "ctrl+cmd+c"
       }
     ]
   },
@@ -53,7 +90,7 @@
     "postinstall": "node ./node_modules/vscode/bin/install"
   },
   "devDependencies": {
-    "typescript": "^2.0.3",
+    "typescript": "3.5.1",
     "vscode": "^1.0.0",
     "mocha": "^2.3.3",
     "@types/node": "^6.0.40",

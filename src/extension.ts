@@ -9,12 +9,18 @@ import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 
+let fileCache = {};
 export function activate(context: vscode.ExtensionContext) {
 
   const CMD_QUICKOPEN = "extension.quickOpen";
   const CMD_QUICKOPEN_PATH = "extension.quickOpenPath";
+  const CMD_QUICKOPEN_SEARCH = "extension.quickOpenSearch";
+  const CMD_QUICKOPEN_SEARCH_CACHE_RESET = "extension.quickOpenSearchCacheReset";
 
   const HOME_DIR = os.homedir();
+
+  let searchIgnoreParterns: any[] = ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"];
+  let maxSearchResult: number = 10;
 
   function getRootPath(): string {
     return vscode.workspace.rootPath || "/";
@@ -23,6 +29,9 @@ export function activate(context: vscode.ExtensionContext) {
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
   context.subscriptions.push(statusBar);
   let statusBarTid: NodeJS.Timer;
+
+  let lastKeyword: string;
+  let quickPicker: vscode.QuickPick<any>;
 
   function showStatusInfo(msg) {
     statusBar.text = msg;
@@ -99,6 +108,161 @@ export function activate(context: vscode.ExtensionContext) {
     });
   }
 
+  function searchFiles(dir: string, keywords: any[], excludePaterns: any[], maxItems: number): string[] {
+    let resultList = [];
+    let isSkip = false;
+    for (let index = 0; index < excludePaterns.length; index++) {
+        const partern = excludePaterns[index];
+        if (partern instanceof RegExp && partern.test(dir)) {
+            isSkip = true;
+            break;
+        } else if (typeof partern === 'string' && dir.indexOf(partern) >= 0) {
+            isSkip = true;
+            break;
+        }
+    }
+    if (isSkip) {
+        return [];
+    }
+    const stats = fs.lstatSync(dir)
+    if (!stats) {
+        return [];
+    }
+    if (stats.isFile()) {
+      let isMatch = true;
+      for (let index = 0; index < keywords.length; index++) {
+        const keyword = keywords[index];
+        if (keyword instanceof RegExp && !keyword.test(dir)) {
+          isMatch = false;
+          break
+        } else if (typeof keyword === 'string' && dir.indexOf(keyword) < 0) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (isMatch) {
+        resultList.push(dir);
+      }
+      return resultList;
+    } else if (stats.isDirectory()) {
+      const files = fs.readdirSync(dir);
+
+      for (let index = 0; index < files.length; index++) {
+          if (maxItems && resultList.length >= maxItems) {
+              break;
+          }
+          const list = searchFiles(path.resolve(dir, files[index]), keywords, excludePaterns, maxItems ? (maxItems - resultList.length) : maxItems);
+          resultList = resultList.concat(list)
+      }
+      return resultList;
+    }
+  }
+
+  function searchFilesInCache(dir: string, keywords: any[], excludePaterns: any[], maxItems: number): string[]
+  {
+    if (!fileCache[dir]) {
+      showStatusInfo(`QuickOpen caching files in ${ dir }`);
+      fileCache[dir] = searchFiles(dir, [], excludePaterns, 0);
+    }
+    const resultList = [];
+    for (let index = 0; index < fileCache[dir].length; index++) {
+      const file = fileCache[dir][index];
+      let isMatch = true;
+      for (let index = 0; index < keywords.length; index++) {
+        const keyword = keywords[index];
+        if (keyword instanceof RegExp && !keyword.test(file)) {
+          isMatch = false;
+          break
+        } else if (typeof keyword === 'string' && file.indexOf(keyword) < 0) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (isMatch) {
+        resultList.push(file);
+      }
+      if (resultList.length >= maxItems) {
+        break;
+      }
+    }
+    return resultList;
+  }
+
+  function showSearchPicker() {
+    if (!quickPicker) {
+      quickPicker = vscode.window.createQuickPick();
+      // quickPicker.ignoreFocusOut = true;
+      quickPicker.title = "Search File In Current Workspace";
+      quickPicker.placeholder = "Input some words to search file in workspace."
+      quickPicker.onDidChangeSelection(function(items){
+        openDocument(path.resolve(items[0].description, items[0].label));
+      });
+      quickPicker.onDidHide(function() {
+        quickPicker.value = '';
+      });
+      quickPicker.onDidChangeValue(async (keyword) => {
+        if (quickPicker.busy) {
+          return;
+        }
+        keyword = keyword.trim();
+        if (!keyword) {
+          quickPicker.items = [];
+          return;
+        }
+        lastKeyword = keyword;
+        quickPicker.busy = true;
+        // only search rootDir
+        const ret: vscode.QuickPickItem[] = [];
+        const keywords = keyword.split(/\s+/);
+        const keywordRegexs = keywords.map((k) => new RegExp(k));
+
+        for (let folder of vscode.workspace.workspaceFolders) {
+          if ((!folder.uri.scheme || folder.uri.scheme === 'file') && ret.length < maxSearchResult) {
+            try {
+              const list = searchFilesInCache(folder.uri.path, keywordRegexs, searchIgnoreParterns, maxSearchResult);
+              if (keyword !== lastKeyword) {
+                break;
+              }
+              for (let index = 0; index < list.length; index++) {
+                if (ret.length >= maxSearchResult) {
+                  break;
+                }
+                const file = list[index];
+                ret.push({
+                  description: path.dirname(file),
+                  label: path.basename(file),
+                  alwaysShow: true,
+                })
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(err && err.message || String(err));
+              continue;
+            }
+          }
+        }
+        quickPicker.busy = false;
+
+        if (keyword === lastKeyword) {
+          quickPicker.items = ret;
+        }
+      });
+    }
+    quickPicker.busy = false;
+    quickPicker.value = '';
+    quickPicker.show();
+  }
+
+  maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
+  searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
+  searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v));
+
+  vscode.workspace.onDidChangeConfiguration(function(e) {
+    maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
+    searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
+    searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v));
+    fileCache = {};
+  });
+
   context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN, async (pickedPath: string) => {
     if (typeof pickedPath !== "string") {
       console.log("pickedPath is not a string");
@@ -152,6 +316,23 @@ export function activate(context: vscode.ExtensionContext) {
       inputPath = path.resolve(getRootPath(), inputPath);
     }
     vscode.commands.executeCommand(CMD_QUICKOPEN, inputPath);
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN_SEARCH, async () => {
+    try {
+      showSearchPicker();
+    } catch (err) {
+      vscode.window.showErrorMessage(err && err.message || String(err));
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN_SEARCH_CACHE_RESET, async () => {
+    try {
+      fileCache = {};
+      showStatusInfo(`QuickOpen caches cleared`);
+    } catch (err) {
+      vscode.window.showErrorMessage(err && err.message || String(err));
+    }
   }));
 }
 
