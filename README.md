@@ -11,19 +11,19 @@ Visual Studio Code plugin that provide a quick open file command
 
 ## open pick up path
 
-![Quick Open](https://github.com/hector/vscode-quick-open-plus/raw/master/images/quick_open.gif)
+![Quick Open](https://github.com/hectorqin/vscode-quick-open-plus/raw/master/images/quick_open.gif)
 
 ## open input path
 
-![Quick Open Path](https://github.com/hector/vscode-quick-open-plus/raw/master/images/open_path.gif)
+![Quick Open Path](https://github.com/hectorqin/vscode-quick-open-plus/raw/master/images/open_path.gif)
 
 ## open input URL
 
-![Quick Open URL](https://github.com/hector/vscode-quick-open-plus/raw/master/images/open_url.gif)
+![Quick Open URL](https://github.com/hectorqin/vscode-quick-open-plus/raw/master/images/open_url.gif)
 
 ## open input to search file in workspace
 
-![Quick Open Search](https://github.com/hector/vscode-quick-open-plus/raw/master/images/open_search.gif)
+![Quick Open Search](https://github.com/hectorqin/vscode-quick-open-plus/raw/master/images/open_search.gif)
 
 ## Installation
 
@@ -45,7 +45,7 @@ View detail on [Visual Studio Code Marketplace](https://marketplace.visualstudio
 ## Issues & Contribution
 
 If there is any bug, create a pull request or an issue please.
-[Github](https://github.com/hector/vscode-quick-open-plus)
+[Github](https://github.com/hectorqin/vscode-quick-open-plus)
 
 ## Changelog
 
