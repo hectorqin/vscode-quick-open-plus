@@ -19,9 +19,6 @@ export function activate(context: vscode.ExtensionContext) {
 
   const HOME_DIR = os.homedir();
 
-  let searchIgnoreParterns: any[] = ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"];
-  let maxSearchResult: number = 10;
-
   function getRootPath(): string {
     return vscode.workspace.rootPath || "/";
   }
@@ -31,7 +28,12 @@ export function activate(context: vscode.ExtensionContext) {
   let statusBarTid: NodeJS.Timer;
 
   let lastKeyword: string;
-  let quickPicker: vscode.QuickPick<any>;
+  let quickSearchPicker: vscode.QuickPick<any>;
+
+  // config
+  let searchIgnoreParterns: any[] = ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"];
+  let maxSearchResult: number = 10;
+  let keywordRegexFlags: string = '';
 
   function showStatusInfo(msg) {
     statusBar.text = msg;
@@ -223,28 +225,28 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   function showSearchPicker() {
-    if (!quickPicker) {
-      quickPicker = vscode.window.createQuickPick();
-      // quickPicker.ignoreFocusOut = true;
-      quickPicker.title = "Search File In Current Workspace";
-      quickPicker.placeholder = "Input some words to search file in workspace."
-      quickPicker.onDidChangeSelection(function(items){
+    if (!quickSearchPicker) {
+      quickSearchPicker = vscode.window.createQuickPick();
+      // quickSearchPicker.ignoreFocusOut = true;
+      quickSearchPicker.title = "Search File In Current Workspace";
+      quickSearchPicker.placeholder = "Input some words to search file in workspace."
+      quickSearchPicker.onDidChangeSelection(function(items){
         openDocument(path.resolve(items[0].description, items[0].label.split(/\s+/).pop()));
       });
-      quickPicker.onDidHide(function() {
-        quickPicker.value = '';
+      quickSearchPicker.onDidHide(function() {
+        quickSearchPicker.value = '';
       });
-      quickPicker.onDidChangeValue(async (keyword) => {
-        if (quickPicker.busy) {
+      quickSearchPicker.onDidChangeValue(async (keyword) => {
+        if (quickSearchPicker.busy) {
           return;
         }
         keyword = keyword.trim();
         if (!keyword) {
-          quickPicker.items = [];
+          quickSearchPicker.items = [];
           return;
         }
         lastKeyword = keyword;
-        quickPicker.busy = true;
+        quickSearchPicker.busy = true;
         // search patern  `aa bb`  `a/b` `a/b c` `c/d/ aa`
         const ret: vscode.QuickPickItem[] = [];
         const keywords = keyword.split(/\s+/);
@@ -252,12 +254,12 @@ export function activate(context: vscode.ExtensionContext) {
         let lastDirKeywordRegex;
         if (keywords[0].indexOf('/') >= 0) {
           const dirKeywords = keywords.shift();
-          dirKeywordRegex = dirKeywords.split(/\/+/).filter(v => v).map(k => new RegExp(k));
+          dirKeywordRegex = dirKeywords.split(/\/+/).filter(v => v).map(k => new RegExp(k, keywordRegexFlags));
           if (!dirKeywords.endsWith('/')) {
             lastDirKeywordRegex = dirKeywordRegex.pop();
           }
         }
-        const fileNameKeywordRegexs = keywords.map((k) => new RegExp(k));
+        const fileNameKeywordRegexs = keywords.map((k) => new RegExp(k, keywordRegexFlags));
         if (lastDirKeywordRegex) {
           fileNameKeywordRegexs.unshift(lastDirKeywordRegex);
         }
@@ -287,26 +289,28 @@ export function activate(context: vscode.ExtensionContext) {
             }
           }
         }
-        quickPicker.busy = false;
+        quickSearchPicker.busy = false;
 
         if (keyword === lastKeyword) {
-          quickPicker.items = ret;
+          quickSearchPicker.items = ret;
         }
       });
     }
-    quickPicker.busy = false;
-    quickPicker.value = '';
-    quickPicker.show();
+    quickSearchPicker.busy = false;
+    quickSearchPicker.value = '';
+    quickSearchPicker.show();
   }
 
   maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
   searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
-  searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v));
+  keywordRegexFlags=keywordRegexFlags.replace('i', '') + (vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreCase') ? 'i' : '')
+  searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v, keywordRegexFlags));
 
   vscode.workspace.onDidChangeConfiguration(function(e) {
     maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
     searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
-    searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v));
+    keywordRegexFlags=keywordRegexFlags.replace('i', '') + (vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreCase') ? 'i' : '')
+    searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v, keywordRegexFlags));
     fileCache = {};
   });
 

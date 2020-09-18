@@ -2,7 +2,7 @@
   "name": "quick-open",
   "displayName": "Quick Open",
   "description": "Visual Studio Code plugin that provide a quick open file command",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "publisher": "hector",
   "repository": {
     "type": "git",
@@ -35,6 +35,12 @@
           "default": 10,
           "scope": "window",
           "markdownDescription": "Specifies the number of items to show in serach list. Use 0 to specify no limit"
+        },
+        "quickOpen.searchIgnoreCase": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Specifies whether to ignore case when searching in the workspace."
         },
         "quickOpen.searchIgnoreParterns": {
           "type": "array",
