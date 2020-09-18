@@ -21,6 +21,9 @@ Visual Studio Code plugin that provide a quick open file command
 
 ![Quick Open URL](https://github.com/leizongmin/vscode-quick-open/raw/master/images/open_url.gif)
 
+## open input to search file in workspace
+
+![Quick Open Search](https://github.com/leizongmin/vscode-quick-open/raw/master/images/open_search.gif)
 
 ## Installation
 

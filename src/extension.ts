@@ -108,7 +108,7 @@ export function activate(context: vscode.ExtensionContext) {
     });
   }
 
-  function searchFiles(dir: string, keywords: any[], excludePaterns: any[], maxItems: number): string[] {
+  function searchFiles(dir: string, keywords: any[], dirKeywords: any[], excludePaterns: any[], maxItems: number): string[] {
     let resultList = [];
     let isSkip = false;
     for (let index = 0; index < excludePaterns.length; index++) {
@@ -145,35 +145,64 @@ export function activate(context: vscode.ExtensionContext) {
       }
       return resultList;
     } else if (stats.isDirectory()) {
+      let isMatch = true;
+      for (let index = 0; index < dirKeywords.length; index++) {
+        const keyword = keywords[index];
+        if (keyword instanceof RegExp && !keyword.test(dir)) {
+          isMatch = false;
+          break
+        } else if (typeof keyword === 'string' && dir.indexOf(keyword) < 0) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (!isMatch) {
+        return resultList;
+      }
       const files = fs.readdirSync(dir);
 
       for (let index = 0; index < files.length; index++) {
           if (maxItems && resultList.length >= maxItems) {
               break;
           }
-          const list = searchFiles(path.resolve(dir, files[index]), keywords, excludePaterns, maxItems ? (maxItems - resultList.length) : maxItems);
+          const list = searchFiles(path.resolve(dir, files[index]), keywords, dirKeywords, excludePaterns, maxItems ? (maxItems - resultList.length) : maxItems);
           resultList = resultList.concat(list)
       }
       return resultList;
     }
   }
 
-  function searchFilesInCache(dir: string, keywords: any[], excludePaterns: any[], maxItems: number): string[]
+  function searchFilesInCache(dir: string, keywords: any[], dirKeywords: any[], excludePaterns: any[], maxItems: number): string[]
   {
     if (!fileCache[dir]) {
       showStatusInfo(`QuickOpen caching files in ${ dir }`);
-      fileCache[dir] = searchFiles(dir, [], excludePaterns, 0);
+      fileCache[dir] = searchFiles(dir, [], [], excludePaterns, 0);
     }
     const resultList = [];
     for (let index = 0; index < fileCache[dir].length; index++) {
       const file = fileCache[dir][index];
+      const fileName = path.basename(file);
+      const dirName = path.dirname(file);
       let isMatch = true;
       for (let index = 0; index < keywords.length; index++) {
         const keyword = keywords[index];
-        if (keyword instanceof RegExp && !keyword.test(file)) {
+        if (keyword instanceof RegExp && !keyword.test(fileName)) {
+          isMatch = false;
+          break;
+        } else if (typeof keyword === 'string' && fileName.indexOf(keyword) < 0) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (!isMatch) {
+        continue;
+      }
+      for (let index = 0; index < dirKeywords.length; index++) {
+        const keyword = dirKeywords[index];
+        if (keyword instanceof RegExp && !keyword.test(dirName)) {
           isMatch = false;
           break
-        } else if (typeof keyword === 'string' && file.indexOf(keyword) < 0) {
+        } else if (typeof keyword === 'string' && dirName.indexOf(keyword) < 0) {
           isMatch = false;
           break;
         }
@@ -195,7 +224,7 @@ export function activate(context: vscode.ExtensionContext) {
       quickPicker.title = "Search File In Current Workspace";
       quickPicker.placeholder = "Input some words to search file in workspace."
       quickPicker.onDidChangeSelection(function(items){
-        openDocument(path.resolve(items[0].description, items[0].label));
+        openDocument(path.resolve(items[0].description, items[0].label.split(/\s+/).pop()));
       });
       quickPicker.onDidHide(function() {
         quickPicker.value = '';
@@ -211,15 +240,27 @@ export function activate(context: vscode.ExtensionContext) {
         }
         lastKeyword = keyword;
         quickPicker.busy = true;
-        // only search rootDir
+        // search patern  `aa bb`  `a/b` `a/b c` `c/d/ aa`
         const ret: vscode.QuickPickItem[] = [];
         const keywords = keyword.split(/\s+/);
-        const keywordRegexs = keywords.map((k) => new RegExp(k));
+        let dirKeywordRegex = [];
+        let lastDirKeywordRegex;
+        if (keywords[0].indexOf('/') >= 0) {
+          const dirKeywords = keywords.shift();
+          dirKeywordRegex = dirKeywords.split(/\/+/).filter(v => v).map(k => new RegExp(k));
+          if (!dirKeywords.endsWith('/')) {
+            lastDirKeywordRegex = dirKeywordRegex.pop();
+          }
+        }
+        const fileNameKeywordRegexs = keywords.map((k) => new RegExp(k));
+        if (lastDirKeywordRegex) {
+          fileNameKeywordRegexs.unshift(lastDirKeywordRegex);
+        }
 
         for (let folder of vscode.workspace.workspaceFolders) {
           if ((!folder.uri.scheme || folder.uri.scheme === 'file') && ret.length < maxSearchResult) {
             try {
-              const list = searchFilesInCache(folder.uri.path, keywordRegexs, searchIgnoreParterns, maxSearchResult);
+              const list = searchFilesInCache(folder.uri.path, fileNameKeywordRegexs, dirKeywordRegex, searchIgnoreParterns, maxSearchResult);
               if (keyword !== lastKeyword) {
                 break;
               }
@@ -230,7 +271,7 @@ export function activate(context: vscode.ExtensionContext) {
                 const file = list[index];
                 ret.push({
                   description: path.dirname(file),
-                  label: path.basename(file),
+                  label: `$(file) ${path.basename(file)}`,
                   alwaysShow: true,
                 })
               }
