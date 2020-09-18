@@ -25,7 +25,7 @@
     "onCommand:extension.quickOpenSearch"
   ],
   "main": "./out/src/extension",
-  "icon": "https://github.com/hectorqin/vscode-quick-open-plus/raw/master/images/icon.png",
+  "icon": "images/icon.png",
   "contributes": {
     "configuration": {
       "title": "QuickOpen",
