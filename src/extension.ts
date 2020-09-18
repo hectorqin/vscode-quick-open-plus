@@ -170,6 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
       return resultList;
     }
+    return resultList;
   }
 
   function searchFilesInCache(dir: string, keywords: any[], dirKeywords: any[], excludePaterns: any[], maxItems: number): string[]
@@ -181,6 +182,10 @@ export function activate(context: vscode.ExtensionContext) {
     const resultList = [];
     for (let index = 0; index < fileCache[dir].length; index++) {
       const file = fileCache[dir][index];
+      if (typeof file !== 'string') {
+        console.log("Error file in fileCache: ", dir, index, file);
+        continue;
+      }
       const fileName = path.basename(file);
       const dirName = path.dirname(file);
       let isMatch = true;
@@ -276,6 +281,7 @@ export function activate(context: vscode.ExtensionContext) {
                 })
               }
             } catch (err) {
+              console.log(err);
               vscode.window.showErrorMessage(err && err.message || String(err));
               continue;
             }
@@ -363,6 +369,7 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       showSearchPicker();
     } catch (err) {
+      console.log(err)
       vscode.window.showErrorMessage(err && err.message || String(err));
     }
   }));
