@@ -19,9 +19,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   const HOME_DIR = os.homedir();
 
-  function getRootPath(): string {
-    return vscode.workspace.rootPath || "/";
-  }
+  const FIXED_FIRST_TIME = 'fixed_only_first_time';
+  const FIXED_ALWAYS = 'fixed_always';
+  const FIXED_FIRST_TIME_AND_ON_DELETED = 'fixed_first_time_and_on_deleted';
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left);
   context.subscriptions.push(statusBar);
@@ -30,10 +30,16 @@ export function activate(context: vscode.ExtensionContext) {
   let lastKeyword: string;
   let quickSearchPicker: vscode.QuickPick<any>;
 
+  let lastPath: string;
+  let quickPathPicker: vscode.QuickPick<any>;
+  let localWorkspaceDir: string[];
+
   // config
   let searchIgnoreParterns: any[] = ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"];
   let maxSearchResult: number = 10;
   let keywordRegexFlags: string = '';
+  let fixedPaths: any[] = ["/", "~"];
+  let fixedOption: string = FIXED_FIRST_TIME;
 
   function showStatusInfo(msg) {
     statusBar.text = msg;
@@ -58,20 +64,30 @@ export function activate(context: vscode.ExtensionContext) {
     }, s * 1000);
   }
 
+  function unshiftFixedPath(list: vscode.QuickPickItem[], isFirstTime: boolean = false, isOnDeleted: boolean = false): vscode.QuickPickItem[] {
+    if (fixedOption == FIXED_FIRST_TIME && !isFirstTime) {
+      return list;
+    }
+    if (fixedOption == FIXED_FIRST_TIME_AND_ON_DELETED && !isFirstTime && !isOnDeleted) {
+      return list;
+    }
+    for (let index = 0; index < fixedPaths.length; index++) {
+      const filePath = fixedPaths[index];
+      list.unshift({
+        description: fixFilePath(filePath),
+        label: path.basename(filePath) || '/',
+        alwaysShow: true,
+      });
+    }
+    return list;
+  }
+
   async function listDir(dir: string): Promise<vscode.QuickPickItem[]> {
     const list = await readdir(dir);
     const ret: vscode.QuickPickItem[] = [
       {
-        description: "/",
-        label: "/",
-      },
-      {
         description: path.resolve(dir, ".."),
         label: "..",
-      },
-      {
-        description: HOME_DIR,
-        label: "~",
       },
     ];
     for (const item of list) {
@@ -84,8 +100,41 @@ export function activate(context: vscode.ExtensionContext) {
     return ret;
   }
 
-  function showFiles(pickedPath: string) {
-    vscode.window.showQuickPick(listDir(pickedPath)).then((item) => {
+  function getWorkspaceLocalDir(): string[] {
+    localWorkspaceDir = [];
+    for (let folder of vscode.workspace.workspaceFolders) {
+      if (!folder.uri.scheme || folder.uri.scheme === 'file') {
+        localWorkspaceDir.push(folder.uri.path);
+      }
+    }
+    return localWorkspaceDir;
+  }
+
+  function listWorkspaceDir() {
+    let localDirs = getWorkspaceLocalDir();
+    if (localDirs.length == 1) {
+      return listDir(localDirs[0]);
+    } else {
+      const ret: vscode.QuickPickItem[] = [];
+      for (let index = 0; index < localDirs.length; index++) {
+        const dir = localDirs[index];
+        ret.push({
+          description: dir,
+          label: path.basename(dir),
+        });
+      }
+      return ret;
+    }
+  }
+
+  async function showFiles(pickedPath: string) {
+    let list: vscode.QuickPickItem[];
+    if (!pickedPath) {
+      list = unshiftFixedPath(await listWorkspaceDir(), true);
+    } else {
+      list = unshiftFixedPath(await listDir(pickedPath));
+    }
+    vscode.window.showQuickPick(list).then((item) => {
       if (!item) {
         console.log("canceled pick");
         return;
@@ -301,17 +350,145 @@ export function activate(context: vscode.ExtensionContext) {
     quickSearchPicker.show();
   }
 
-  maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
-  searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
-  keywordRegexFlags=keywordRegexFlags.replace('i', '') + (vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreCase') ? 'i' : '')
-  searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v, keywordRegexFlags));
+  async function showPathPicker() {
+    if (!quickPathPicker) {
+      quickPathPicker = vscode.window.createQuickPick();
+      // quickPathPicker.ignoreFocusOut = true;
+      quickPathPicker.matchOnDescription = true;
+      quickPathPicker.title = "Open File";
+      quickPathPicker.placeholder = "Input file path."
+      quickPathPicker.onDidChangeSelection(async function(items){
+        if (!items || !items.length) {
+          return;
+        }
+        let filePath = items[0].description;
+        if (isURL(filePath)) {
+          showStatusInfo(`Downloading ${ filePath }`);
+          try {
+            filePath = await download(filePath, (size, total) => {
+              console.log("download progress: ", size, total);
+              if (total) {
+                showStatusInfo(`Downloading ${ (size / total * 100).toFixed(1) }%`);
+              } else {
+                showStatusInfo(`Downloading ${ (size / 1024).toFixed(0) }KB`);
+              }
+            });
+            openDocument(filePath);
+          } catch (err) {
+            showStatusWran(err.message);
+          }
+          return;
+        }
+        const stats = fs.lstatSync(filePath);
+        if (!stats) {
+          return;
+        }
+        if (stats.isFile()) {
+          quickPathPicker.value = filePath;
+          openDocument(filePath);
+        } else if (stats.isDirectory()){
+          quickPathPicker.value = filePath + '/';
+          quickPathPicker.items = unshiftFixedPath(await listDir(quickPathPicker.value).catch(() => {
+            return [];
+          }));
+          quickPathPicker.show();
+        }
+      });
+      quickPathPicker.onDidHide(function() {
+        quickPathPicker.value = '';
+      });
+      quickPathPicker.onDidChangeValue(async (inputPath) => {
+        if (quickPathPicker.busy) {
+          return;
+        }
+        inputPath = inputPath.trim();
+        if (!inputPath) {
+          quickPathPicker.items = unshiftFixedPath(await listWorkspaceDir(), true);
+          return;
+        }
+        let isOnDeleted = false;
+        if (lastPath && inputPath.length < lastPath.length) {
+          isOnDeleted = true;
+        }
+        lastPath = inputPath;
+        let currentInputPath = inputPath;
+        if (isURL(inputPath)) {
+          quickPathPicker.items = [
+            {
+              description: inputPath,
+              label: `Download And Open`,
+            }
+          ];
+          return;
+        }
+        if (inputPath === '~') {
+          quickPathPicker.value = HOME_DIR;
+          return;
+        }
+        if (!inputPath.endsWith('/')) {
+          inputPath = path.dirname(inputPath);
+          if (!inputPath) {
+            quickPathPicker.items = unshiftFixedPath(await listWorkspaceDir(), true);
+            return;
+          }
+        }
+        quickPathPicker.busy = true;
+        // Fix path
+        if (!path.isAbsolute(inputPath)) {
+          if (localWorkspaceDir.length === 1) {
+            inputPath = path.resolve(localWorkspaceDir[0], inputPath);
+          } else {
+            if (inputPath.startsWith('./')) {
+              inputPath = inputPath.substring(2);
+            }
+            for (let index = 0; index < localWorkspaceDir.length; index++) {
+              const dir = localWorkspaceDir[index];
+              if (inputPath.startsWith(path.basename(dir))) {
+                inputPath = path.resolve(dir, inputPath);
+                break;
+              }
+            }
+          }
+        }
+        console.log("quickOpenPath", inputPath);
+        if (!path.isAbsolute(inputPath)) {
+          return;
+        }
+        const ret: vscode.QuickPickItem[] = unshiftFixedPath(await listDir(inputPath).catch(() => {
+          return [];
+        }), false, isOnDeleted);
+        quickPathPicker.busy = false;
 
-  vscode.workspace.onDidChangeConfiguration(function(e) {
+        if (currentInputPath === lastPath) {
+          quickPathPicker.items = ret;
+        }
+      });
+    }
+    quickPathPicker.busy = false;
+    quickPathPicker.items = unshiftFixedPath(await listWorkspaceDir(), true);
+    quickPathPicker.value = '';
+    quickPathPicker.show();
+  }
+
+  function initConfig()
+  {
     maxSearchResult = vscode.workspace.getConfiguration('quickOpen').get('maxSearchResult');
     searchIgnoreParterns = vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreParterns');
     keywordRegexFlags=keywordRegexFlags.replace('i', '') + (vscode.workspace.getConfiguration('quickOpen').get('searchIgnoreCase') ? 'i' : '')
     searchIgnoreParterns = searchIgnoreParterns.map((v)=>new RegExp(v, keywordRegexFlags));
+    fixedPaths = vscode.workspace.getConfiguration('quickOpen').get('fixedPaths');
+    if (vscode.workspace.getConfiguration('quickOpen').get('fixedWorkspaceDirs')) {
+      for (const dir of getWorkspaceLocalDir()) {
+        fixedPaths.push(dir);
+      }
+    }
+    fixedOption = vscode.workspace.getConfiguration('quickOpen').get('fixedOption');
     fileCache = {};
+  }
+
+  initConfig();
+  vscode.workspace.onDidChangeConfiguration(function(e) {
+    initConfig();
   });
 
   context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN, async (pickedPath: string) => {
@@ -321,7 +498,10 @@ export function activate(context: vscode.ExtensionContext) {
       pickedPath = "";
     }
     try {
-      pickedPath = pickedPath || getRootPath();
+      if (!pickedPath) {
+        showFiles(pickedPath);
+        return;
+      }
       console.log("quickOpen", pickedPath);
       pickedPath = fixFilePath(pickedPath);
       const s = await readFileStats(pickedPath);
@@ -339,34 +519,12 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN_PATH, async (inputPath: string) => {
-    if (typeof inputPath !== "string") {
-      console.log("inputPath is not a string");
-      console.log(inputPath);
-      inputPath = "";
+    try {
+      showPathPicker();
+    } catch (err) {
+      console.log(err)
+      vscode.window.showErrorMessage(err && err.message || String(err));
     }
-    if (!inputPath) {
-      inputPath = await vscode.window.showInputBox({
-        prompt: "Enter the file path to open",
-      });
-    }
-    if (isURL(inputPath)) {
-      showStatusInfo(`Downloading ${ inputPath }`);
-      try {
-        inputPath = await download(inputPath, (size, total) => {
-          console.log("download progress: ", size, total);
-          if (total) {
-            showStatusInfo(`Downloading ${ (size / total * 100).toFixed(1) }%`);
-          } else {
-            showStatusInfo(`Downloading ${ (size / 1024).toFixed(0) }KB`);
-          }
-        });
-      } catch (err) {
-        showStatusWran(err.message);
-      }
-    } else {
-      inputPath = path.resolve(getRootPath(), inputPath);
-    }
-    vscode.commands.executeCommand(CMD_QUICKOPEN, inputPath);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN_SEARCH, async () => {

@@ -2,7 +2,7 @@
   "name": "quick-open",
   "displayName": "Quick Open",
   "description": "Visual Studio Code plugin that provide a quick open file command",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "publisher": "hector",
   "repository": {
     "type": "git",
@@ -50,6 +50,31 @@
           "default": ["node_modules", "vendor", ".git", ".svn", ".hg", "CVS", ".history", "bower_components"],
           "scope": "window",
           "markdownDescription": "Specifies match parterns to ignore when searching in the workspace."
+        },
+        "quickOpen.fixedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["/", "~"],
+          "scope": "window",
+          "markdownDescription": "Specifies fixed path list showing in quick-open panel."
+        },
+        "quickOpen.fixedWorkspaceDirs": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Specifies whether to fixed workspace dirs showing in quick-open panel."
+        },
+        "quickOpen.fixedOption": {
+          "type": "string",
+          "default": "fixed_only_first_time",
+          "enum": ["fixed_only_first_time", "fixed_always", "fixed_first_time_and_on_deleted"],
+          "enumDescriptions": [
+            "Adds fixed path options to quick-open panel only in the first time.",
+            "Adds fixed path options to quick-open panel always.",
+            "Adds fixed path options to quick-open panel in the first time and on keyword deleted."
+          ]
         }
       }
     },
