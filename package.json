@@ -1,8 +1,8 @@
 {
   "name": "quick-open",
   "displayName": "Quick Open",
-  "description": "Visual Studio Code plugin that provide a quick open file command",
-  "version": "1.4.0",
+  "description": "Visual Studio Code plugin that provide some quick open commands",
+  "version": "2.0.0",
   "publisher": "hector",
   "repository": {
     "type": "git",
@@ -21,6 +21,7 @@
   ],
   "activationEvents": [
     "onCommand:extension.quickOpen",
+    "onCommand:extension.quickOpenURL",
     "onCommand:extension.quickOpenPath",
     "onCommand:extension.quickOpenSearch"
   ],
@@ -82,6 +83,10 @@
       {
         "command": "extension.quickOpen",
         "title": "Quick Open File"
+      },
+      {
+        "command": "extension.quickOpenURL",
+        "title": "Quick Open URL"
       },
       {
         "command": "extension.quickOpenPath",

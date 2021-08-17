@@ -13,6 +13,7 @@ let fileCache = {};
 export function activate(context: vscode.ExtensionContext) {
 
   const CMD_QUICKOPEN = "extension.quickOpen";
+  const CMD_QUICKOPEN_URL = "extension.quickOpenURL";
   const CMD_QUICKOPEN_PATH = "extension.quickOpenPath";
   const CMD_QUICKOPEN_SEARCH = "extension.quickOpenSearch";
   const CMD_QUICKOPEN_SEARCH_CACHE_RESET = "extension.quickOpenSearchCacheReset";
@@ -102,6 +103,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   function getWorkspaceLocalDir(): string[] {
     localWorkspaceDir = [];
+    if (!vscode.workspace.workspaceFolders) return [];
     for (let folder of vscode.workspace.workspaceFolders) {
       if (!folder.uri.scheme || folder.uri.scheme === 'file') {
         localWorkspaceDir.push(folder.uri.path);
@@ -313,28 +315,30 @@ export function activate(context: vscode.ExtensionContext) {
           fileNameKeywordRegexs.unshift(lastDirKeywordRegex);
         }
 
-        for (let folder of vscode.workspace.workspaceFolders) {
-          if ((!folder.uri.scheme || folder.uri.scheme === 'file') && ret.length < maxSearchResult) {
-            try {
-              const list = searchFilesInCache(folder.uri.path, fileNameKeywordRegexs, dirKeywordRegex, searchIgnoreParterns, maxSearchResult);
-              if (keyword !== lastKeyword) {
-                break;
-              }
-              for (let index = 0; index < list.length; index++) {
-                if (ret.length >= maxSearchResult) {
+        if (vscode.workspace.workspaceFolders) {
+          for (let folder of vscode.workspace.workspaceFolders) {
+            if ((!folder.uri.scheme || folder.uri.scheme === 'file') && ret.length < maxSearchResult) {
+              try {
+                const list = searchFilesInCache(folder.uri.path, fileNameKeywordRegexs, dirKeywordRegex, searchIgnoreParterns, maxSearchResult);
+                if (keyword !== lastKeyword) {
                   break;
                 }
-                const file = list[index];
-                ret.push({
-                  description: path.dirname(file),
-                  label: `$(file) ${path.basename(file)}`,
-                  alwaysShow: true,
-                })
+                for (let index = 0; index < list.length; index++) {
+                  if (ret.length >= maxSearchResult) {
+                    break;
+                  }
+                  const file = list[index];
+                  ret.push({
+                    description: path.dirname(file),
+                    label: `$(file) ${path.basename(file)}`,
+                    alwaysShow: true,
+                  })
+                }
+              } catch (err) {
+                console.log(err);
+                vscode.window.showErrorMessage(err && err.message || String(err));
+                continue;
               }
-            } catch (err) {
-              console.log(err);
-              vscode.window.showErrorMessage(err && err.message || String(err));
-              continue;
             }
           }
         }
@@ -514,6 +518,74 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
     } catch (err) {
+      vscode.window.showErrorMessage(err && err.message || String(err));
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand(CMD_QUICKOPEN_URL, async (inputPath: string) => {
+    try {
+      // const previewURL = "https://m.qidian.com";
+      // const previewURL = "https://m.baidu.com";
+      // const previewURL = "http://localhost:8080/web/#/chapter";
+      const previewURL = await vscode.window.showInputBox({
+        prompt: "请输入要打开的URL",
+      });
+      if (!previewURL) {
+        return;
+      }
+      const panel = vscode.window.createWebviewPanel(
+        'Link',
+        'Preview',
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true
+        }
+      );
+
+      panel.webview.html = `<!DOCTYPE html>
+      <html lang="en">
+      <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Preview</title>
+      </head>
+      <body>
+          <script>
+              (function() {
+                  const vscode = acquireVsCodeApi();
+                  window.addEventListener('message', event => {
+                    const message = event.data;
+                    switch (message.command) {
+                      case 'redirect':
+                          location.href = message.url
+                          break;
+                    }
+                  });
+                  vscode.postMessage({
+                    command: 'init'
+                  })
+              }())
+          </script>
+      </body>
+      </html>`;
+
+      // Handle messages from the webview
+      panel.webview.onDidReceiveMessage(
+        message => {
+          switch (message.command) {
+            case 'init':
+              panel.webview.postMessage({ command: 'redirect', url: previewURL });
+              break;
+            case 'alert':
+              vscode.window.showErrorMessage(message.text);
+              return;
+          }
+        },
+        undefined,
+        context.subscriptions
+      );
+    } catch (err) {
+      console.log(err)
       vscode.window.showErrorMessage(err && err.message || String(err));
     }
   }));
